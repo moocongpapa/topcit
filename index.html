@@ -17,6 +17,7 @@
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"
     />
+    <link rel="stylesheet" href="./study.css" />
     <style>
       :root {
         --bg: #f3f5f9;
@@ -837,6 +838,7 @@
         </footer>
       </div>
     </main>
+    <script src="./study-data.js"></script>
     <script>
       "use strict";
       const domains = [
@@ -2488,6 +2490,7 @@
           ],
         ],
       ];
+      textbook.push(...window.TOPCIT_STUDY.chapters);
       const reviewCards = textbook.flatMap((chapter, chapterIndex) =>
         chapter.lessons.map((lesson, lessonIndex) => ({
           id: `${chapter.id}-${lessonIndex}`,
@@ -2496,8 +2499,8 @@
           chapter: chapter.title,
           lesson: lesson.h,
           lessonIndex,
-          question: reviewChecks[chapterIndex][lessonIndex][0],
-          answer: reviewChecks[chapterIndex][lessonIndex][1],
+          question: lesson.review?.question || reviewChecks[chapterIndex][lessonIndex][0],
+          answer: lesson.review?.answer || reviewChecks[chapterIndex][lessonIndex][1],
         })),
       );
       const quizLegacyModules = [
@@ -3873,6 +3876,7 @@
             : null,
         }),
       );
+      quizzes.push(...window.TOPCIT_STUDY.questions.map((q, i) => ({...q, id: quizzes.length + i, source: null})));
       const guides = [
         {
           title: "객체지향 · UML & Extract Superclass",
@@ -3950,7 +3954,7 @@ WHERE id = 101;
                 "'": "&#39;",
               })[c],
           );
-      let mode = "learn",
+      let mode = "sprint",
         domain = "all",
         moduleId = null,
         examFocus = null,
@@ -3964,8 +3968,7 @@ WHERE id = 101;
         reviewScope = "due",
         reviewIndex = 0,
         reviewShown = false;
-      const answers = {},
-        revealed = new Set();
+      const revealed = new Set();
       const reviewKey = "topcit-review-v1";
       const reviewProgress = (() => {
         try {
@@ -4050,7 +4053,7 @@ WHERE id = 101;
                 .join("")}</details>`,
           )
           .join("") +
-        '<hr style="border-color:var(--line);margin:20px 0"><button data-mode="textbook">▤ &nbsp; 핵심 교과서</button><button data-mode="review">↻ &nbsp; 오늘의 복습</button><button data-mode="strategy">◎ &nbsp; 2026 시험 가이드</button><button data-mode="quiz">✓ &nbsp; 자가 테스트</button><button data-mode="calc">⌗ &nbsp; 계산기 스튜디오</button><button data-mode="guide">&lt;/&gt; &nbsp; 실무 수행 가이드</button>';
+        '<hr style="border-color:var(--line);margin:20px 0"><button data-mode="sprint">▣ &nbsp; 7일 집중학습</button><button data-mode="sources">↗ &nbsp; 자료·기출 출처</button><button data-mode="textbook">▤ &nbsp; 핵심 교과서</button><button data-mode="review">↻ &nbsp; 오늘의 복습</button><button data-mode="strategy">◎ &nbsp; 2026 시험 가이드</button><button data-mode="quiz">✓ &nbsp; 자가 테스트</button><button data-mode="calc">⌗ &nbsp; 계산기 스튜디오</button><button data-mode="guide">&lt;/&gt; &nbsp; 실무 수행 가이드</button>';
       $("#nav").onclick = (e) => {
         const b = e.target.closest("button");
         if (!b) return;
@@ -4077,6 +4080,8 @@ WHERE id = 101;
         render();
       };
       const tabDefs = [
+        ["sprint", "7일 집중학습"],
+        ["sources", "자료·기출 출처"],
         ["learn", "개념 학습"],
         ["textbook", "핵심 교과서"],
         ["review", "오늘의 복습"],
@@ -4086,6 +4091,7 @@ WHERE id = 101;
         ["guide", "실무 수행 가이드"],
       ];
       function render() {
+        clearInterval(studyTimer);
         $("#tabs").innerHTML = tabDefs
           .map(
             ([id, label]) =>
@@ -4104,6 +4110,8 @@ WHERE id = 101;
           );
         if (query) return renderSearch();
         ({
+          sprint: renderSprint,
+          sources: renderSources,
           learn: renderLearn,
           textbook: renderTextbook,
           review: renderReview,
@@ -4218,109 +4226,196 @@ WHERE id = 101;
         query = e.target.value.trim();
         render();
       };
-      function renderQuiz() {
-        const list = quizzes.filter(
-          (q) =>
-            (quizModule === "all" || q.module === quizModule) &&
-            (quizType === "all" || q.type === quizType),
-        );
-        const pageSize = 15;
-        const pageCount = Math.max(1, Math.ceil(list.length / pageSize));
-        quizPage = Math.min(quizPage, pageCount - 1);
-        const start = quizPage * pageSize;
-        const visible = list.slice(start, start + pageSize);
-        $("#view").innerHTML =
-          `<div class="sectionhead" id="quizTop"><div><div class="eyebrow">PAST PAPERS & PRACTICE</div><h2>기출 주제와 실전 문제은행</h2></div></div>
-          <p class="muted">2015년 공개 기출은 원문·해설 페이지로 연결했습니다. 아래 ${quizzes.length}개 연습문제는 공식 출제기준과 기출 주제를 참고해 새로 작성했으며, 실제 기출 원문과 구분합니다.</p>
-          <div class="exam-note"><strong>2026년 시험 유형</strong><br>객관식 60문항 · 서술형 7문항 · 수행형 8문항, 총 75문항입니다. 단답형은 2025년 이전 유형이므로 이 페이지에서는 복습용으로만 제공합니다. <a href="https://swuniv.korea.ac.kr/bbs/swuniv/979/177637/download.do" target="_blank" rel="noopener">2026 신규 평가모델 자료 보기</a></div>
-          <details class="panel question" id="pastPapers" ${pastPapersOpen ? "open" : ""}><summary><strong>공개 기출 원문·해설 ${pastPaperLinks.length}개 보기</strong> <span class="note">(한국경제 2015년 연재 · 이전 시험 방식)</span></summary><p class="note">제목은 학습 주제를 요약했습니다. 각 링크에서 당시 문제와 해설을 확인하세요. 현재 시험의 문항 유형·배점은 위 2026 기준을 따르세요.</p><div class="past-paper-grid">${pastPaperLinks.map((p) => `<a href="${p.url}" target="_blank" rel="noopener"><strong>${esc(p.title)} ↗</strong><small>${p.module.toUpperCase()} · ${esc(p.type)} · ${esc(p.topic)}</small></a>`).join("")}</div></details>
-          <div class="sectionhead"><div><div class="eyebrow">ORIGINAL PRACTICE</div><h2>직접 풀고, 키워드로 점검하기</h2></div></div>
-          <p class="muted">객관식·단답형은 답안을 확인하고, 서술형·수행형은 모범답안과 핵심 키워드를 비교하세요.</p>
-          <div class="grid2" style="margin:20px 0"><label>공식 모듈<select id="quizModule"><option value="all">전체 모듈</option>${examModules.map((m) => `<option value="${m.id}" ${quizModule === m.id ? "selected" : ""}>${m.name}</option>`).join("")}</select></label><label>문제 유형<select id="quizType">${["all", "객관식", "단답형", "서술형", "수행형"].map((t) => `<option value="${t}" ${quizType === t ? "selected" : ""}>${t === "all" ? "전체 유형" : t}</option>`).join("")}</select></label></div>
-          <p class="note" style="margin-bottom:15px">조건에 맞는 ${list.length}문제 중 ${list.length ? start + 1 : 0}–${start + visible.length}번 표시 · 입력한 답안은 이 페이지를 닫기 전까지 유지됩니다.</p>` +
-          visible
-            .map((q) => {
-              const longAnswer = q.type === "서술형" || q.type === "수행형";
-              return `<article class="panel question" data-q="${q.id}"><span class="pill">${q.module.toUpperCase()} / ${q.type}</span><h3>${q.id + 1}. ${esc(q.question)}</h3>${q.options ? `<fieldset><legend class="sr-only">보기 선택</legend>${q.options.map((o, i) => `<label class="option"><input type="radio" name="q${q.id}" value="${i}" ${answers[q.id] === String(i) ? "checked" : ""}>${esc(o)}</label>`).join("")}</fieldset>` : `<label class="sr-only" for="a${q.id}">나의 답안</label><textarea id="a${q.id}" rows="${q.type === "수행형" ? 6 : longAnswer ? 3 : 1}" placeholder="답을 작성해 보세요">${esc(answers[q.id] || "")}</textarea>`}<div class="actions"><button class="primary check">${longAnswer ? "키워드 점검" : "답안 확인"}</button><button class="secondary reveal" aria-expanded="${revealed.has(q.id)}">${revealed.has(q.id) ? "정답 숨기기" : "정답 보기"}</button></div><p class="feedback" role="status"></p><div class="answer" ${revealed.has(q.id) ? "" : "hidden"}><strong>모범답안 & 핵심 키워드</strong><p>${highlight(q.answer, q.keys)}</p><p class="note">${longAnswer ? "키워드 일치는 참고용입니다. 논리·문법·상황 적용 여부를 직접 평가하세요." : "해설을 읽고 답의 근거까지 확인하세요."}</p></div>${q.source ? `<p class="note">관련 구형 기출 주제: <a href="${q.source.url}" target="_blank" rel="noopener">${esc(q.source.title)} 원문·해설 보기 ↗</a></p>` : ""}</article>`;
-            })
-            .join("") +
-          `<nav class="quiz-pager" aria-label="연습문제 페이지"><button class="secondary" data-quiz-page="prev" ${quizPage === 0 ? "disabled" : ""}>이전 15문제</button><span class="note">${quizPage + 1} / ${pageCount} 페이지</span><button class="secondary" data-quiz-page="next" ${quizPage === pageCount - 1 ? "disabled" : ""}>다음 15문제</button></nav>`;
-        $("#quizModule").onchange = (e) => {
-          quizModule = e.target.value;
-          quizPage = 0;
-          renderQuiz();
-        };
-        $("#quizType").onchange = (e) => {
-          quizType = e.target.value;
-          quizPage = 0;
-          renderQuiz();
-        };
-        $("#pastPapers").ontoggle = (e) => {
-          pastPapersOpen = e.target.open;
-        };
-        $("#view")
-          .querySelectorAll("[data-quiz-page]")
-          .forEach((button) => {
-            button.onclick = () => {
-              quizPage += button.dataset.quizPage === "next" ? 1 : -1;
-              renderQuiz();
-              $("#quizTop").scrollIntoView({ block: "start" });
-            };
-          });
+      const studyStorageKey = "topcit-practice-v1";
+      function loadStudy() {
+        try {
+          const raw = JSON.parse(localStorage.getItem(studyStorageKey) || "{}");
+          const record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+          const state = record(raw);
+          for (const key of ["answers", "marks", "notes", "checks"]) state[key] = record(state[key]);
+          const mock = state.mock;
+          if (!mock || !Array.isArray(mock.ids) || mock.ids.length !== 75 ||
+              new Set(mock.ids).size !== 75 || mock.ids.some(id => !Number.isInteger(id) || !quizzes[id]) ||
+              !Number.isFinite(mock.deadline)) state.mock = null;
+          else for (const key of ["answers", "marks", "notes"]) mock[key] = record(mock[key]);
+          return state;
+        } catch { return { answers: {}, marks: {}, notes: {}, checks: {}, mock: null }; }
       }
-      $("#view").addEventListener("input", (e) => {
-        const card = e.target.closest("[data-q]");
-        if (card) answers[card.dataset.q] = e.target.value;
-      });
-      $("#view").addEventListener("click", (e) => {
-        const card = e.target.closest("[data-q]");
-        if (!card) return;
-        const q = quizzes[+card.dataset.q],
-          ans = card.querySelector(".answer");
-        if (e.target.closest(".reveal")) {
-          ans.hidden = !ans.hidden;
-          if (ans.hidden) revealed.delete(q.id);
-          else revealed.add(q.id);
-          card.querySelector(".reveal").textContent = ans.hidden
-            ? "정답 보기"
-            : "정답 숨기기";
-          card
-            .querySelector(".reveal")
-            .setAttribute("aria-expanded", !ans.hidden);
+      const studyState = loadStudy();
+      let storageAvailable = true, studyTimer = null, mockPrompt = null;
+      let quizScope = "all", quizDay = "all", quizSet = "all";
+      let resourceKind = "all", resourceModule = "all";
+      const studyResources = [
+        ...pastPaperLinks.map(p => ({...p, kind: "공개 기출", year: "2015", note: p.topic})),
+        ...window.TOPCIT_STUDY.resources,
+      ];
+      function saveStudy() {
+        try { localStorage.setItem(studyStorageKey, JSON.stringify(studyState)); storageAvailable = true; }
+        catch { storageAvailable = false; }
+        document.querySelectorAll(".study-storage").forEach(el => el.textContent = storageMessage());
+      }
+      function storageMessage() {
+        return storageAvailable ? "답안·오답·메모·체크리스트는 이 브라우저에 저장됩니다. 다른 기기와 동기화되지 않습니다."
+          : "브라우저 저장을 사용할 수 없어 이번 화면에서만 유지됩니다. 중요한 답안은 따로 복사해 두세요.";
+      }
+      function quizWork() { return quizSet === "mock" && studyState.mock ? studyState.mock : studyState; }
+      function openStudyBook(id) {
+        bookModule = "all";
+        navigate("textbook");
+        const detail = document.getElementById(id);
+        if (detail) { detail.open = true; detail.scrollIntoView({block:"start", behavior:"smooth"}); }
+      }
+      function openDayQuiz(day) {
+        quizSet = "new"; quizDay = String(day); quizScope = "all";
+        quizModule = "all"; quizType = "all"; quizPage = 0; revealed.clear(); navigate("quiz");
+      }
+      function updateChecklistProgress() {
+        const total = window.TOPCIT_STUDY.days.reduce((n,d)=>n+d.tasks.length,0);
+        const done = window.TOPCIT_STUDY.days.reduce((n,d)=>n+d.tasks.filter((_,i)=>studyState.checks[`${d.day}-${i}`]===true).length,0);
+        const label = document.getElementById("sprintProgressLabel");
+        if (label) label.textContent = `${done}/${total}개 학습 단계 완료`;
+        const bar = document.getElementById("sprintProgress");
+        if (bar) { bar.max=total; bar.value=done; }
+      }
+      function renderSprint() {
+        const lessonCount = textbook.reduce((n,b)=>n+b.lessons.length,0);
+        $("#view").innerHTML = `<section class="sprint-intro"><div class="eyebrow">ONE WEEK · STUDY & PRACTICE</div><h2>7일, 읽고 풀고 다시 기억하기</h2><p class="muted">하루 3~4시간을 기준으로 짠 집중 과정입니다. 먼저 풀어 약점을 찾고, 직접 SQL·코드·설계 답안을 만든 뒤 다음 날 다시 떠올려 보세요.</p><div class="study-stats"><div class="study-stat"><strong>${quizzes.length}</strong><span>해설이 있는 연습문제</span></div><div class="study-stat"><strong>${lessonCount}</strong><span>핵심·실전 소단원</span></div><div class="study-stat"><strong>${studyResources.filter(r=>r.kind==="공개 기출").length}</strong><span>공개 기출 원문 링크</span></div><div class="study-stat"><strong>75</strong><span>150분 실전 세트 문항</span></div></div><p id="sprintProgressLabel" class="note"></p><progress id="sprintProgress" class="study-progress" aria-label="7일 학습 완료율"></progress><div class="study-toolbar"><button class="primary" data-day-practice="1">1일차 문제부터 시작</button><button class="secondary" data-study-nav="sources">자료·기출 출처</button><button class="secondary" data-open-wrong>오답 노트 열기</button></div><p class="study-storage">${storageMessage()}</p></section>
+        <div class="exam-note"><strong>2026년 10월 10일(토) 정기평가 응시라면</strong><br>10월 5~9일은 시험 전 5일입니다. ①1·2일차 핵심 ②3일차 ③4·5일차 핵심 ④6일차 리허설 ⑤7일차 오답 순으로 압축하세요. 시험일·입실 시각은 본인 수험표로 확인하세요. <a href="https://www.topcit.or.kr/home.do?language=ko" target="_blank" rel="noopener">공식 일정 ↗</a></div>
+        <div class="day-grid">${window.TOPCIT_STUDY.days.map(d=>`<article class="panel day-card"><span class="pill">DAY ${d.day} · 약 ${d.minutes}분</span><h3>${esc(d.title)}</h3><p class="muted">${esc(d.focus)}</p>${d.tasks.map((task,i)=>`<label class="day-check"><input type="checkbox" data-study-check="${d.day}-${i}" ${studyState.checks[`${d.day}-${i}`]===true?"checked":""}><span>${esc(task)}</span></label>`).join("")}<div class="study-links">${d.chapters.map(slug=>{const chapter=textbook.find(c=>c.id===`book-${slug}`);return `<button data-study-book="${chapter.id}">${esc(chapter.title)} ↗</button>`;}).join("")}</div><p class="study-output"><strong>오늘 남길 결과</strong><br>${esc(d.output)}</p><div class="actions">${d.day<=5?`<button class="primary" data-day-practice="${d.day}">${d.day}일차 ${quizzes.filter(q=>q.day===d.day).length}문제 풀기</button>`:d.day===6?`<button class="primary" data-mock-start>${studyState.mock?"실전 세트 이어보기":"75문제 실전 시작"}</button>`:`<button class="primary" data-open-wrong>오답만 다시 풀기</button><button class="secondary" data-study-nav="review">개념 복습 카드</button>`}</div></article>`).join("")}</div>`;
+        updateChecklistProgress();
+      }
+      function renderSources() {
+        const filtered=studyResources.filter(r=>(resourceKind==="all"||r.kind===resourceKind)&&(resourceModule==="all"||r.module===resourceModule||r.module==="all"));
+        $("#view").innerHTML=`<div class="sectionhead"><div><div class="eyebrow">READ THE ORIGINAL</div><h2>자료·기출 출처 모음</h2></div><span class="note">${studyResources.length}개 자료 · 확인 2026.10.05</span></div><p class="muted">신문에 공개된 기출은 원문에서 풀고, 공식 모의응시로 도구를 익혀 보세요. 블로그는 개인 풀이·경험이며 원문과 정답의 정확성을 보장하지 않습니다. 이 사이트의 ${quizzes.length}개 문제는 새로 작성한 연습문제입니다.</p><div class="exam-note">2026년은 75문항·150분입니다. 2015·2020년 자료의 단답형과 영역별 배점은 현재와 다릅니다. 과거 에센스 열람과 자료게시판 일부는 종료되어, 확인 가능한 원문·영상·공식 도구를 연결했습니다.</div><div class="study-filters"><label>자료 종류<select id="resourceKind">${["all",...new Set(studyResources.map(r=>r.kind))].map(k=>`<option value="${k}" ${resourceKind===k?"selected":""}>${k==="all"?"모든 자료":k}</option>`).join("")}</select></label><label>학습 모듈<select id="resourceModule">${["all","m1","m2","m3","m4"].map(m=>`<option value="${m}" ${resourceModule===m?"selected":""}>${m==="all"?"전체 모듈":m.toUpperCase()}</option>`).join("")}</select></label></div><p class="note">${filtered.length}개 자료 · 공통 자료는 각 모듈에도 표시합니다.</p><div class="resource-grid">${filtered.map(r=>`<article class="panel resource-card"><span class="pill">${esc(r.kind)} · ${esc(r.year)}</span><h3><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)} ↗</a></h3><p class="muted">${esc(r.note)}</p><span class="note">${r.module==="all"?"전 영역":r.module.toUpperCase()}${r.type?` · 당시 ${esc(r.type)}`:""}</span></article>`).join("")||'<div class="panel study-empty">조건에 맞는 자료가 없습니다.</div>'}</div>`;
+        $("#resourceKind").onchange=e=>{resourceKind=e.target.value;renderSources();};
+        $("#resourceModule").onchange=e=>{resourceModule=e.target.value;renderSources();};
+      }
+      function shuffled(list) {
+        const result=[...list];
+        for(let i=result.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[result[i],result[j]]=[result[j],result[i]];}
+        return result;
+      }
+      function startMock(fresh=false, confirmed=false) {
+        if (fresh && studyState.mock && !confirmed) { mockPrompt="replace"; renderQuiz(); return; }
+        mockPrompt=null;
+        if (!studyState.mock || fresh) {
+          const distribution = {m1:[15,2,4],m2:[15,2,2],m3:[15,2,1],m4:[15,1,1]};
+          const ids=[];
+          for(const [module, counts] of Object.entries(distribution))
+            ["객관식","서술형","수행형"].forEach((type,i)=>ids.push(...shuffled(quizzes.filter(q=>q.module===module&&q.type===type)).slice(0,counts[i]).map(q=>q.id)));
+          studyState.mock={ids,deadline:Date.now()+150*60*1000,finished:false,answers:{},marks:{},notes:{}};
+          saveStudy();
         }
-        if (e.target.closest(".check")) {
-          const raw = (answers[q.id] || "").trim();
-          const f = card.querySelector(".feedback");
-          if (!raw) {
-            f.textContent = "먼저 답안을 입력하거나 보기를 선택하세요.";
-            return;
-          }
-          if (q.type === "서술형" || q.type === "수행형") {
-            const n = q.keys.filter((k) =>
-              raw.toLowerCase().includes(k.toLowerCase()),
-            ).length;
-            f.textContent = `핵심 키워드 ${n}/${q.keys.length}개 포함 · 모범답안과 맥락을 비교하세요.`;
+        quizSet="mock";quizDay="all";quizScope="all";quizType="all";quizModule="all";quizPage=0;revealed.clear();navigate("quiz");
+      }
+      function finishMock() {
+        const mock=studyState.mock;
+        if(!mock||mock.finished)return;
+        mock.finished=true;
+        for(const id of mock.ids){const q=quizzes[id];mock.marks[id]=q.type==="객관식"?(mock.answers[id]===String(q.correct)?"correct":"wrong"):"review";}
+        saveStudy();
+      }
+      function updateMockClock() {
+        const el=document.getElementById("mockClock"), mock=studyState.mock;
+        if(!el||!mock||mock.finished)return;
+        const seconds=Math.max(0,Math.ceil((mock.deadline-Date.now())/1000));
+        el.textContent=`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,"0")}`;
+        if(seconds===0){finishMock();renderQuiz();}
+      }
+      $("#view").addEventListener("change", e=>{
+        if(e.target.matches("[data-study-check]")){
+          studyState.checks[e.target.dataset.studyCheck]=e.target.checked;saveStudy();updateChecklistProgress();
+        }
+      });
+      $("#view").addEventListener("click",e=>{
+        const button=e.target.closest("button");if(!button)return;
+        if(button.dataset.studyBook)openStudyBook(button.dataset.studyBook);
+        if(button.dataset.dayPractice)openDayQuiz(button.dataset.dayPractice);
+        if(button.dataset.studyNav)navigate(button.dataset.studyNav);
+        if(button.hasAttribute("data-open-wrong")){quizSet="all";quizScope="wrong";quizDay="all";quizModule="all";quizType="all";quizPage=0;navigate("quiz");}
+        if(button.hasAttribute("data-mock-start"))startMock();
+        if(button.hasAttribute("data-mock-new"))startMock(true);
+        if(button.hasAttribute("data-mock-finish")){mockPrompt="finish";renderQuiz();}
+        if(button.hasAttribute("data-mock-confirm-finish")){mockPrompt=null;finishMock();renderQuiz();}
+        if(button.hasAttribute("data-mock-confirm-new"))startMock(true,true);
+        if(button.hasAttribute("data-mock-cancel")){mockPrompt=null;renderQuiz();}
+      });
+      function renderQuiz() {
+        clearInterval(studyTimer);
+        const mock=quizSet==="mock"?studyState.mock:null;
+        if(mock&&!mock.finished&&Date.now()>=mock.deadline)finishMock();
+        const liveMock=mock&&!mock.finished, work=quizWork();
+        const pool=mock?mock.ids.map(id=>quizzes[id]):quizzes.filter(q=>quizSet!=="new"||q.origin);
+        const list=pool.filter(q=>(quizModule==="all"||q.module===quizModule)&&
+          (quizType==="all"||q.type===quizType)&&(quizDay==="all"||q.day===Number(quizDay))&&
+          (quizScope==="all"||(quizScope==="wrong"&&["wrong","review"].includes(work.marks[q.id]))||
+           (quizScope==="unanswered"&&!String(work.answers[q.id]||"").trim())));
+        const pageSize=15, pageCount=Math.max(1,Math.ceil(list.length/pageSize));
+        quizPage=Math.max(0,Math.min(quizPage,pageCount-1));
+        const start=quizPage*pageSize, visible=list.slice(start,start+pageSize);
+        const statusText={correct:"정답 확인",wrong:"다시 풀기",review:"자기채점 대기",done:"복습 완료"};
+        const filter=(id,label,values,current)=>`<label>${label}<select id="${id}">${values.map(([v,t])=>`<option value="${v}" ${current===v?"selected":""}>${t}</option>`).join("")}</select></label>`;
+        const mockCorrect=mock?mock.ids.filter(id=>quizzes[id].type==="객관식"&&mock.answers[id]===String(quizzes[id].correct)).length:0;
+        $("#view").innerHTML=`<div class="sectionhead" id="quizTop"><div><div class="eyebrow">PRACTICE · EXPLAIN · REPEAT</div><h2>${mock?"75문제 실전 리허설":"기출 주제와 실전 문제은행"}</h2></div></div><p class="muted">전체 ${quizzes.length}문제 중 이번에 추가한 창작 연습문제는 ${window.TOPCIT_STUDY.questions.length}개입니다. 공개 기출 원문·영상·블로그는 <button class="secondary" data-study-nav="sources">자료·기출 출처 ${studyResources.length}개</button>에서 확인하세요.</p>
+        ${mock?`<div class="mock-banner"><strong>객관식 60 · 서술형 7 · 수행형 8 / M1 21 · M2 19 · M3 18 · M4 17</strong><p class="note">이 문제은행에서 뽑은 연습 세트입니다. 공식 기출 세트나 난이도·배점 재현이 아닙니다. 제출 전에는 해설이 가려집니다.</p>${mock.finished?`<p role="status"><strong>제출 완료 · 객관식 ${mockCorrect}/60 정답</strong><br>서술·수행형 15개는 모범답안과 체크리스트로 직접 평가하세요. 실제 시험 점수로 환산하지 않습니다.</p>`:`<div class="study-toolbar"><span>남은 시간</span><span id="mockClock" class="study-timer" role="timer"></span><button class="primary" data-mock-finish>제출·해설 보기</button></div>`}<button class="secondary" data-mock-new>새 실전 세트 만들기</button>${mockPrompt?`<div class="exam-note" role="alert"><strong>${mockPrompt==="finish"?"제출하면 답안이 고정되고 해설을 볼 수 있습니다.":"기존 실전 답안을 새 세트로 바꿉니다. 일반 문제은행 기록은 유지됩니다."}</strong><div class="actions"><button class="primary" ${mockPrompt==="finish"?"data-mock-confirm-finish":"data-mock-confirm-new"}>${mockPrompt==="finish"?"제출 확정":"새 세트로 교체"}</button><button class="secondary" data-mock-cancel>계속 풀기</button></div></div>`:""}</div>`:`<div class="exam-note"><strong>2026년 유형: 객관식60·서술7·수행8, 150분</strong><br>단답형은 개념 복습용입니다. 서술·수행형의 키워드 일치는 참고 정보이며 자동 정답 판정이 아닙니다. <button class="secondary" data-mock-start>${studyState.mock?"실전 세트 이어보기":"150분 실전 세트 시작"}</button></div>`}
+        <div class="study-filters">${filter("quizSet","문제 묶음",[["all",`전체 ${quizzes.length}문제`],["new",`추가된 ${window.TOPCIT_STUDY.questions.length}문제`],...(studyState.mock?[["mock","75문제 실전 세트"]]:[])],quizSet)}${filter("quizModule","공식 모듈",[["all","전체 모듈"],...examModules.map(m=>[m.id,m.name])],quizModule)}${filter("quizType","문제 유형",["all","객관식","단답형","서술형","수행형"].map(t=>[t,t==="all"?"전체 유형":t]),quizType)}${filter("quizScope","학습 상태",[["all","모든 문제"],["unanswered","답안 없는 문제"],["wrong","오답·다시 풀기"]],quizScope)}${!mock?filter("quizDay","7일 과정",[["all","전체 일차"],...[1,2,3,4,5].map(d=>[String(d),`${d}일차 추가 문제`])],quizDay):""}</div>
+        <p class="study-storage">${storageMessage()}</p><p class="note" style="margin:15px 0">조건에 맞는 ${list.length}문제 · ${list.length?start+1:0}–${start+visible.length}번 표시</p>
+        ${visible.map(q=>{
+          const long=q.type==="서술형"||q.type==="수행형", value=String(work.answers[q.id]||"");
+          const locked=mock?.finished?"disabled":"", number=mock?mock.ids.indexOf(q.id)+1:q.id+1;
+          return `<article class="panel question" data-q="${q.id}"><span class="pill">${q.module.toUpperCase()} · ${q.type}${q.day?` · DAY ${q.day}`:""}</span><span class="study-status">${esc(statusText[work.marks[q.id]]||"미점검")}</span><h3>${number}. ${esc(q.question)}</h3>${q.minutes?`<p class="note">권장 연습 ${q.minutes}분 · 창작 문제</p>`:""}${q.options?`<fieldset ${locked}><legend class="sr-only">${number}번 보기 선택</legend>${q.options.map((o,i)=>`<label class="option"><input type="radio" name="q${q.id}" value="${i}" ${value===String(i)?"checked":""}>${esc(o)}</label>`).join("")}</fieldset>`:`<label class="sr-only" for="a${q.id}">${number}번 나의 답안</label><textarea id="a${q.id}" rows="${q.type==="수행형"?7:long?4:1}" ${locked} placeholder="조건과 근거를 포함해 직접 작성하세요">${esc(value)}</textarea>`}
+          ${liveMock?"":`<div class="actions"><button class="primary check">${long?"키워드 점검":"답안 확인"}</button><button class="secondary reveal" aria-expanded="${revealed.has(q.id)}">${revealed.has(q.id)?"정답 숨기기":"정답 보기"}</button><button class="secondary" data-mark="wrong">다시 풀기로 표시</button></div><p class="feedback" role="status"></p><div class="answer" ${revealed.has(q.id)?"":"hidden"}><strong>모범답안과 해설</strong><p class="answer-text">${highlight(q.answer,q.keys)}</p>${q.rubric?`<strong>자기채점 체크리스트</strong><ul class="rubric">${q.rubric.map(r=>`<li>${esc(r)}</li>`).join("")}</ul>`:""}${long?`<p class="note">키워드가 있어도 논리·구문·사례 적용이 틀리면 정답이 아닙니다. 직접 검토 후 학습 상태를 표시하세요.</p><button class="secondary" data-mark="done">직접 검토 · 복습 완료</button>`:""}</div>${q.chapterId?`<div class="study-links"><button data-study-book="${q.chapterId}">관련 실전 본문 읽기 ↗</button></div>`:""}<label class="study-note">오답 이유·다음에 기억할 것<textarea rows="2" data-qnote="${q.id}" placeholder="틀린 이유를 한 문장으로 적어 보세요">${esc(work.notes[q.id]||"")}</textarea></label>`}
+          ${q.source?`<p class="note">관련 구형 기출 주제: <a href="${esc(q.source.url)}" target="_blank" rel="noopener">${esc(q.source.title)} 원문·해설 ↗</a></p>`:""}</article>`;
+        }).join("")||`<div class="panel study-empty"><h3>조건에 맞는 문제가 없습니다</h3><p class="muted">오답이 없거나 필터 조합에 해당하는 문제가 없습니다. 전체 문제에서 이어서 풀어 보세요.</p></div>`}
+        <nav class="quiz-pager" aria-label="연습문제 페이지"><button class="secondary" data-quiz-page="prev" ${quizPage===0?"disabled":""}>이전 15문제</button><span class="note">${quizPage+1} / ${pageCount} 페이지</span><button class="secondary" data-quiz-page="next" ${quizPage===pageCount-1?"disabled":""}>다음 15문제</button></nav>`;
+        const change=()=>{quizPage=0;renderQuiz();};
+        $("#quizSet").onchange=e=>{quizSet=e.target.value;quizDay="all";quizScope="all";revealed.clear();change();};
+        $("#quizModule").onchange=e=>{quizModule=e.target.value;change();};
+        $("#quizType").onchange=e=>{quizType=e.target.value;change();};
+        $("#quizScope").onchange=e=>{quizScope=e.target.value;change();};
+        if($("#quizDay"))$("#quizDay").onchange=e=>{quizDay=e.target.value;change();};
+        $("#view").querySelectorAll("[data-quiz-page]").forEach(b=>b.onclick=()=>{quizPage+=b.dataset.quizPage==="next"?1:-1;renderQuiz();$("#quizTop").scrollIntoView({block:"start"});});
+        if(liveMock){updateMockClock();studyTimer=setInterval(updateMockClock,1000);}
+      }
+      $("#view").addEventListener("input",e=>{
+        const card=e.target.closest("[data-q]");if(!card)return;
+        const work=quizWork(), id=card.dataset.q;
+        if(e.target.hasAttribute("data-qnote"))work.notes[id]=e.target.value;
+        else if(!(quizSet==="mock"&&work.finished)){
+          work.answers[id]=e.target.value;delete work.marks[id];
+          const label=card.querySelector(".study-status");if(label)label.textContent="답안 수정 · 미점검";
+          const feedback=card.querySelector(".feedback");if(feedback)feedback.textContent="";
+        }
+        saveStudy();
+      });
+      $("#view").addEventListener("click",e=>{
+        const card=e.target.closest("[data-q]");if(!card)return;
+        const q=quizzes[+card.dataset.q], work=quizWork(), ans=card.querySelector(".answer");
+        if(!ans)return;
+        const mark=e.target.closest("[data-mark]");
+        if(mark){work.marks[q.id]=mark.dataset.mark;saveStudy();card.querySelector(".study-status").textContent=mark.dataset.mark==="done"?"복습 완료":"다시 풀기";return;}
+        if(e.target.closest(".reveal")){
+          ans.hidden=!ans.hidden;
+          if(ans.hidden)revealed.delete(q.id);else revealed.add(q.id);
+          card.querySelector(".reveal").textContent=ans.hidden?"정답 보기":"정답 숨기기";
+          card.querySelector(".reveal").setAttribute("aria-expanded",String(!ans.hidden));
+        }
+        if(e.target.closest(".check")){
+          const raw=String(work.answers[q.id]||"").trim(), f=card.querySelector(".feedback");
+          if(!raw){f.textContent="먼저 답안을 입력하거나 보기를 선택하세요.";return;}
+          if(q.type==="서술형"||q.type==="수행형"){
+            const n=q.keys.filter(k=>raw.toLowerCase().includes(k.toLowerCase())).length;
+            f.textContent=`핵심 키워드 ${n}/${q.keys.length}개 포함 · 정답 판정이 아닙니다. 아래 기준으로 직접 검토하세요.`;
+            work.marks[q.id]="review";
           } else {
-            const normalized = raw.toLowerCase().replace(/\s/g, "");
-            const aliases =
-              q.id === 1
-                ? ["솔트"]
-                : q.id === 5
-                  ? ["최종적일관성", "최종일관성"]
-                  : q.id === 11
-                    ? ["반응형웹", "responsive", "responsiveweb"]
-                    : [];
-            const accepted = [String(q.correct), ...aliases].map((item) =>
-              item.toLowerCase().replace(/\s/g, ""),
-            );
-            f.textContent = accepted.includes(normalized)
-              ? "정답입니다. 해설로 근거를 확인하세요."
-              : "다시 점검해 보세요. 아래 해설을 참고하세요.";
+            const aliases=q.id===1?["솔트"]:q.id===5?["최종적일관성","최종일관성"]:q.id===11?["반응형웹","responsive","responsiveweb"]:[];
+            const norm=s=>String(s).toLowerCase().replace(/\s/g,"");
+            const correct=[q.correct,...aliases].map(norm).includes(norm(raw));
+            work.marks[q.id]=correct?"correct":"wrong";
+            f.textContent=correct?"정답입니다. 해설로 근거를 확인하세요.":"오답 노트에 추가했습니다. 해설을 읽고 다시 풀어 보세요.";
           }
-          ans.hidden = false;
-          revealed.add(q.id);
-          card.querySelector(".reveal").textContent = "정답 숨기기";
-          card.querySelector(".reveal").setAttribute("aria-expanded", "true");
+          saveStudy();card.querySelector(".study-status").textContent=work.marks[q.id]==="correct"?"정답 확인":work.marks[q.id]==="wrong"?"다시 풀기":"자기채점 대기";
+          ans.hidden=false;revealed.add(q.id);card.querySelector(".reveal").textContent="정답 숨기기";card.querySelector(".reveal").setAttribute("aria-expanded","true");
         }
       });
       const calcValues = {
@@ -4395,10 +4490,10 @@ WHERE id = 101;
         const lessons = chapter.lessons
           .map(
             (lesson, index) =>
-              `<section class="lesson" id="${chapter.id}-lesson-${index}"><h4>${esc(lesson.h)}</h4><p>${query ? highlight(lesson.text, [query]) : esc(lesson.text)}</p>${lesson.formula ? `<span class="formula">${query ? highlight(lesson.formula, [query]) : esc(lesson.formula)}</span>` : ""}<ul>${lesson.bullets.map((item) => `<li>${query ? highlight(item, [query]) : esc(item)}</li>`).join("")}</ul>${!query ? `<button class="secondary" style="margin-top:14px" data-review-card="${chapter.id}-${index}">이 내용 복습하기</button>` : ""}</section>`,
+              `<section class="lesson" id="${chapter.id}-lesson-${index}"><h4>${esc(lesson.h)}</h4><p>${query ? highlight(lesson.text, [query]) : esc(lesson.text)}</p>${lesson.formula ? `<span class="formula">${query ? highlight(lesson.formula, [query]) : esc(lesson.formula)}</span>` : ""}<ul>${lesson.bullets.map((item) => `<li>${query ? highlight(item, [query]) : esc(item)}</li>`).join("")}</ul>${lesson.example ? `<pre class="study-code"><code>${esc(lesson.example)}</code></pre>` : ""}${lesson.trap ? `<p class="study-trap"><strong>실수 방지</strong><br>${esc(lesson.trap)}</p>` : ""}${!query ? `<button class="secondary" style="margin-top:14px" data-review-card="${chapter.id}-${index}">이 내용 복습하기</button>` : ""}</section>`,
           )
           .join("");
-        return `<details class="panel textbook-card" id="${chapter.id}" ${open ? "open" : ""}><summary><span><span class="pill">${moduleInfo.name}</span> &nbsp; ${esc(chapter.title)}</span></summary><p>${query ? highlight(chapter.summary, [query]) : esc(chapter.summary)}</p>${chapter.refs ? `<p class="note">공식 V4.0E 출제기준 관련 항목: ${esc(chapter.refs)}</p>` : ""}${lessons}</details>`;
+        return `<details class="panel textbook-card" id="${chapter.id}" ${open ? "open" : ""}><summary><span><span class="pill">${moduleInfo.name}</span> &nbsp; ${esc(chapter.title)}</span></summary><p>${query ? highlight(chapter.summary, [query]) : esc(chapter.summary)}</p>${chapter.refs ? `<p class="note">공식 V4.0E 출제기준 관련 항목: ${esc(chapter.refs)}</p>` : ""}${lessons}${chapter.sources?.length ? `<div class="study-links">${chapter.sources.map(source=>`<a href="${esc(source.url)}" target="_blank" rel="noopener">${esc(source.title)} ↗</a>`).join("")}</div>` : ""}</details>`;
       }
       function renderTextbook() {
         const list = textbook
@@ -4552,14 +4647,7 @@ WHERE id = 101;
             <section class="panel"><span class="pill">문제 유형</span><h3>암기보다 수행을 준비하세요</h3><p class="muted">2026년 평가모델은 객관식 60문항, 서술형 7문항, 수행형 8문항입니다. 단답형은 제외됐습니다. 수행형은 코딩뿐 아니라 UML·ERD·순서도·UI 설계 등 실제 산출물을 만드는 능력을 평가합니다.</p><div class="exam-note"><strong>답안 기본 골격</strong><br>요구사항/제약 → 대안 비교 → 선택 근거 → 구현 또는 산출물 → 위험 통제 → 검증 지표</div></section>
             <section class="panel"><span class="pill">시간 전략</span><h3>문항당 평균은 약 2분</h3><p class="muted">실제로는 수행형에 더 많은 시간이 필요합니다. 짧은 문제에서 시간을 확보하고, 수행형은 요구사항 누락을 막기 위해 먼저 답안 골격을 잡으세요.</p><div class="exam-note"><strong>3회독 방식</strong><br>1차: 즉답 가능한 문제 → 2차: 계산·코드 추적 → 3차: 서술·수행형 완성 및 키워드 검수</div></section>
           </div>
-          <section class="panel question"><span class="pill">6주 학습 루틴</span><h3>읽기 → 손으로 만들기 → 설명하기</h3><table class="strategy-table"><tbody>
-            <tr><th>1주</th><td>M1 공학·알고리즘·언어 기초, 시간복잡도와 코드 추적</td></tr>
-            <tr><th>2주</th><td>M1 분석·설계·테스트, UML과 테스트케이스 직접 작성</td></tr>
-            <tr><th>3주</th><td>M2 모델링·SQL·정규화, ERD와 복합 SQL 반복</td></tr>
-            <tr><th>4주</th><td>M3 OS·네트워크·보안, 계층 흐름과 공격-통제 매핑</td></tr>
-            <tr><th>5주</th><td>M4 전략·PM·커뮤니케이션, EVM 계산과 1페이지 제안 답안</td></tr>
-            <tr><th>6주</th><td>150분 모의 실전, 오답을 개념/계산/요구 누락/시간 부족으로 분류</td></tr>
-          </tbody></table></section>
+          <section class="panel question"><span class="pill">7일 집중학습</span><h3>읽기 → 직접 작성 → 다음 날 복습</h3><p class="muted">1일 코드·알고리즘, 2일 UML·테스트, 3일 SQL·DB·AI, 4일 OS·네트워크·보안, 5일 비즈니스·계산, 6일 150분 리허설, 7일 오답을 권장합니다. 하루 3~4시간 기준이며 5일 압축 순서도 제공했습니다.</p><button class="primary" data-study-nav="sprint">체크리스트와 일차별 문제 열기</button></section>
           <section class="panel question"><span class="pill">PRIMARY SOURCES</span><h3>검증에 사용한 공식 자료</h3><div class="source-list">
             <a href="https://www.topcit.or.kr/introduction/question.do" target="_blank" rel="noopener">TOPCIT 공식 평가체계 — 모듈별 문항·배점·시간</a>
             <a href="https://www.topcit.or.kr/introduction/syllabus.do" target="_blank" rel="noopener">TOPCIT 공식 출제기준 V4.0E</a>
